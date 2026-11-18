@@ -5,6 +5,7 @@ import numpy as np
 
 from image_lab.validation import Invalid
 
+from .adjacent import find_adjacent
 from .density import check_region, density_view, develop, relative_density, sample_base
 from .diagnostics import clipping, overlay, rounded, summary
 from .frame import apply_retouch, prepared
@@ -26,6 +27,26 @@ class Workbench:
 
     def check_setting(self, project_id, settings):
         check_region(self.scan(project_id).codes, settings['base_region'])
+
+    def neighbor(self, project, direction):
+        settings = project['settings']
+        if not settings['crop']:
+            raise Invalid('请先框出一格画格，再沿胶片查找邻格。')
+        scan = self.scan(project['id'])
+        source = scan.linear(settings['encoding'])
+        base = sample_base(source, scan.codes, scan.maximum, settings['base_region'])
+        return find_adjacent(source, base['transmission'], settings['crop'],
+                             self._step(settings, direction))
+
+    @staticmethod
+    def _step(settings, direction):
+        """Map a direction seen in the displayed frame back to the scan axis."""
+        if settings['turn'] % 2:
+            raise Invalid('画格已旋转 90°，胶片在画面中沿上下延伸。请先恢复正向，再用左右邻格。')
+        step = -1 if direction == 'left' else 1
+        if settings['turn'] == 2:
+            step = -step
+        return -step if settings['mirror'] else step
 
     def develop(self, project):
         settings = project['settings']

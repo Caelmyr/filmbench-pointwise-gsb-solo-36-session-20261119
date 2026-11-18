@@ -7,7 +7,7 @@ from image_lab.validation import Invalid
 from .demos import DEMOS, make_demo
 from .frame import frame_size
 from .scan import FORMATS, MAX_UPLOAD
-from .settings import initial_settings
+from .settings import direction as direction_value, initial_settings
 from .storage import Projects
 from .workbench import Workbench
 
@@ -99,6 +99,17 @@ def register(app, data_dir):
     @film.get('/projects/<project_id>/probe')
     def probe(project_id):
         return jsonify(workbench.probe(projects.load(project_id), location()))
+
+    @film.post('/projects/<project_id>/neighbor/<direction>')
+    def neighbor(project_id, direction):
+        document = request.get_json(silent=True)
+        if not isinstance(document, dict) or set(document) != {'version'}:
+            raise Invalid('查找邻格需要当前工程修订号')
+        direction = direction_value(direction)
+        project, found = projects.find_neighbor(
+            project_id, document['version'], direction,
+            lambda current, side: workbench.neighbor(current, side))
+        return jsonify({**info(project), 'neighbor': found})
 
     @film.get('/projects/<project_id>/loupe.png')
     def loupe(project_id):

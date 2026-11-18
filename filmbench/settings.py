@@ -43,6 +43,12 @@ def point(value, size, label):
     return list(value)
 
 
+def direction(value):
+    if value not in ('left', 'right'):
+        raise Invalid('邻格方向应为左或右')
+    return value
+
+
 def clone_setting(value, size):
     if value is None:
         return None

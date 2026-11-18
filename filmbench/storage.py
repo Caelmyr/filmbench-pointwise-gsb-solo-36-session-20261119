@@ -97,6 +97,18 @@ class Projects:
             self._write(self.location(project_id), project)
             return project
 
+    def find_neighbor(self, project_id, version, direction, locate):
+        """Locate the cell beside the current crop and adopt it, if it is credible."""
+        with self.lock:
+            project = self.load(project_id)
+            if type(version) is not int or version != project['version']:
+                raise Conflict('此工程已更新，请刷新后重试')
+            found = locate(project, direction)
+            settings = validate({**project['settings'], 'crop': found['crop']}, project['size'])
+            project.update(settings=settings, version=version + 1)
+            self._write(self.location(project_id), project)
+            return project, found
+
     def archive(self, project):
         raw = self.raw(project['id'])
         buffer = BytesIO()

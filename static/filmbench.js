@@ -355,6 +355,28 @@ async function saveSettings(changes, notice, nextMode) {
   }
 }
 
+async function findNeighbor(direction) {
+  if (!active || busy) return;
+  busy = true;
+  const side = direction === "left" ? "左" : "右";
+  message("正在沿胶片查找" + side + "侧紧邻的画格…");
+  try {
+    const result = await json(route() + "/neighbor/" + direction,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({version: active.version})});
+    active = result;
+    if (tool) setTool(null);
+    mode = "positive";
+    fillProject();
+    renderProject();
+    const found = result.neighbor;
+    message("已换成" + side + "邻格，" + found.target_width + " px 宽（当前格 " + found.frame_width + " px）。");
+  } catch (error) {
+    message(error.message, true);
+  } finally {
+    busy = false;
+  }
+}
 function openDemo(key) {
   return loadProject(() => json("/film/demos/" + key, {method: "POST"}), true);
 }
@@ -371,6 +393,8 @@ byId("encoding").addEventListener("change", async event => {
   event.target.value = active.settings.encoding;
 });
 byId("rotate").addEventListener("click", () => saveSettings({turn: (active.settings.turn + 1) % 4}, "已旋转画格。", "positive"));
+byId("previousFrame").addEventListener("click", () => findNeighbor("left"));
+byId("nextFrame").addEventListener("click", () => findNeighbor("right"));
 byId("mirror").addEventListener("click", () => saveSettings({mirror: !active.settings.mirror}, "已更新镜像设置。", "positive"));
 byId("resetBase").addEventListener("click", () => saveSettings({base_region: null}, "已恢复片边估计。"));
 byId("resetTone").addEventListener("click", () => saveSettings({tone: toneDefaults}, "已恢复默认显影。", "positive"));
