@@ -9,12 +9,14 @@ TONE_RANGE = {'black': (0, .6), 'white': (.35, 3), 'exposure': (-3, 3),
               'contrast': (.35, 2.2), 'red': (-.35, .35),
               'green': (-.35, .35), 'blue': (-.35, .35)}
 ENCODINGS = ('srgb', 'linear')
+SPROCKET_SIDES = ('auto', 'top', 'bottom')
 
 
 def initial_settings(encoding, base_region=None, crop=None):
     return validate({'encoding': encoding, 'base_region': base_region,
                      'crop': crop, 'turn': 0, 'mirror': False,
-                     'tone': TONE_DEFAULT.copy(), 'retouch': None}, None)
+                     'tone': TONE_DEFAULT.copy(), 'retouch': None,
+                     'sprocket': {'region': None, 'side': 'auto'}}, None)
 
 
 def fields(value, allowed, label):
@@ -59,8 +61,19 @@ def clone_setting(value, size):
     return {'source': source, 'target': target, 'radius': radius}
 
 
+def sprocket_setting(value, size):
+    fields(value, {'region', 'side'}, '齿孔检查')
+    if set(value) != {'region', 'side'}:
+        raise Invalid('齿孔检查需要参照框和所在片边')
+    if value['side'] not in SPROCKET_SIDES:
+        raise Invalid('齿孔所在片边只能为上边、下边或自动')
+    return {'region': region(value['region'], size, '齿孔参照', 12),
+            'side': value['side']}
+
+
 def validate(settings, size):
-    keys = {'encoding', 'base_region', 'crop', 'turn', 'mirror', 'tone', 'retouch'}
+    keys = {'encoding', 'base_region', 'crop', 'turn', 'mirror', 'tone', 'retouch',
+            'sprocket'}
     fields(settings, keys, '扫描设置')
     if set(settings) != keys:
         raise Invalid('扫描设置不完整')
@@ -83,7 +96,8 @@ def validate(settings, size):
     return {**settings, 'tone': dict(tone),
             'base_region': region(settings['base_region'], size, '片基取样', 3),
             'crop': region(settings['crop'], size, '画格裁切', 8),
-            'retouch': clone_setting(settings['retouch'], size)}
+            'retouch': clone_setting(settings['retouch'], size),
+            'sprocket': sprocket_setting(settings['sprocket'], size)}
 
 
 def apply_patch(settings, changes, size):

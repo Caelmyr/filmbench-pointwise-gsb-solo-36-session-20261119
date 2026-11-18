@@ -35,6 +35,7 @@
         <button data-mode="source" aria-pressed="false">完整原片</button>
         <button data-mode="density" aria-pressed="false">相对密度</button>
         <button data-mode="clipping" aria-pressed="false">扫描截断</button>
+        <button data-mode="sprocket" aria-pressed="false">齿孔破口</button>
       </div>
       <div id="stage" class="stage">
         <div id="empty" class="empty">
@@ -57,6 +58,7 @@
         <button data-tool="probe" aria-pressed="false">像素探针</button>
         <button data-tool="base" aria-pressed="false">框选片基</button>
         <button data-tool="crop" aria-pressed="false">框选画格</button>
+        <button data-tool="sprocket" aria-pressed="false">框选齿孔参照</button>
         <button data-tool="retouch" aria-pressed="false">点修补</button>
         <button id="cancelTool" hidden>取消</button>
         <label id="retouchSize" hidden>半径<input id="radius" type="number" value="9" min="2" max="64" step="1">px</label>
@@ -107,6 +109,13 @@
           <p class="reading" id="frameReading"></p>
           <div class="small-buttons"><button id="rotate">顺时针 90°</button><button id="mirror" aria-pressed="false">镜像</button></div>
           <div class="small-buttons"><button id="resetCrop">取消裁切</button><button id="resetRetouch">移除修补</button></div>
+        </section>
+        <section>
+          <h2>齿孔</h2>
+          <label class="control">所在片边<select id="sprocketSide"><option value="auto">自动</option><option value="top">上边</option><option value="bottom">下边</option></select></label>
+          <div id="sprocketReading" class="reading">先框出一段完整的齿孔作参照。</div>
+          <div class="small-buttons"><button id="sampleSprocket">框选齿孔参照</button><button id="resetSprocket">清除参照</button></div>
+          <div id="sprocketReport" class="sprocket-report" hidden></div>
         </section>
         <section class="download">
           <h2>导出</h2>

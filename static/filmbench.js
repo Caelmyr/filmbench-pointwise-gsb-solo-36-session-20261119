@@ -10,10 +10,12 @@ const modes = all("[data-mode]");
 const toneDefaults = {black: .04, white: 1.25, exposure: 0, contrast: 1, red: 0, green: 0, blue: 0};
 const viewLabels = {
   positive: "当前正片", split: "原片与正片同位对照", source: "完整扫描原片",
-  density: "当前画格相对密度", clipping: "完整扫描的通道截断标注"
+  density: "当前画格相对密度", clipping: "完整扫描的通道截断标注",
+  sprocket: "完整扫描上这一排齿孔的破口标注"
 };
 let active;
 let metrics;
+let sprocketReport = null;
 let mode = "positive";
 let tool = null;
 let firstClone = null;
@@ -91,7 +93,9 @@ function updateCurrentProject() {
 function activate(project) {
   active = project;
   metrics = null;
+  sprocketReport = null;
   drawHistogram();
+  drawSprocketReport();
   mode = "positive";
   probe = null;
   setTool(null);
@@ -110,6 +114,11 @@ function fillProject() {
   byId("encoding").value = settings.encoding;
   for (const [name, value] of Object.entries(settings.tone)) byId("toneForm").elements[name].value = value;
   byId("mirror").setAttribute("aria-pressed", String(settings.mirror));
+  byId("sprocketSide").value = settings.sprocket.side;
+  byId("resetSprocket").disabled = !settings.sprocket.region;
+  byId("sprocketReading").textContent = settings.sprocket.region
+    ? "正在检查这一排齿孔…"
+    : "先框出一段完整的齿孔作参照。";
   byId("resetCrop").disabled = !settings.crop;
   byId("resetRetouch").disabled = !settings.retouch;
   byId("resetBase").disabled = !settings.base_region;
@@ -135,10 +144,84 @@ function renderProject() {
   }).catch(error => {
     if (render === viewVersion) message(error.message, true);
   });
+  if (active.settings.sprocket.region) {
+    json(route() + "/sprocket").then(report => {
+      if (render !== viewVersion) return;
+      sprocketReport = report;
+      drawSprocketReport();
+      drawView();
+    }).catch(error => {
+      if (render !== viewVersion) return;
+      sprocketReport = {ready: false, message: error.message, damage: [], notes: [], clipped: {count: 0}};
+      drawSprocketReport();
+      if (mode === "sprocket") message(error.message, true);
+    });
+  } else {
+    sprocketReport = null;
+    drawSprocketReport();
+  }
+}
+
+function drawSprocketReport() {
+  const panel = byId("sprocketReport");
+  const report = sprocketReport;
+  byId("resetSprocket").disabled = !active?.settings.sprocket.region;
+  if (!report || !report.ready) {
+    panel.hidden = true;
+    panel.replaceChildren();
+    byId("sprocketReading").textContent = report
+      ? report.message : "先框出一段完整的齿孔作参照。";
+    return;
+  }
+  panel.hidden = false;
+  const {reference: ref, damage} = report;
+  byId("sprocketReading").textContent =
+    "参照 " + ref.holes + " 个完整孔 · " + (ref.side === "top" ? "上边" : "下边")
+    + " · " + (damage.length ? damage.length + " 处破口" : "没有破口");
+  byId("sprocketReading").title = report.notes.join("\n");
+  const children = [];
+  if (!damage.length) {
+    const clean = document.createElement("p");
+    clean.className = "sprocket-head";
+    clean.textContent = "这一排没有破口";
+    children.push(clean);
+  }
+  for (const item of damage) {
+    const row = document.createElement("button");
+    row.className = "sprocket-break";
+    row.type = "button";
+    const tag = document.createElement("b");
+    tag.textContent = item.index;
+    const text = document.createElement("span");
+    text.textContent = item.kind === "merged"
+      ? "连孔破口 · 原片 x " + item.bounds[0] + "–" + item.bounds[2]
+      : "单孔撕开 · 原片 x " + item.bounds[0] + "–" + item.bounds[2];
+    row.append(tag, text);
+    row.title = item.reason + " · 宽 " + item.width + "、高 " + item.height + " 像素";
+    row.addEventListener("click", () => focusSprocket(item.bounds));
+    children.push(row);
+  }
+  const notes = document.createElement("p");
+  notes.className = "sprocket-notes";
+  notes.textContent = report.notes.join(" ");
+  children.push(notes);
+  panel.replaceChildren(...children);
+}
+
+function focusSprocket(bounds) {
+  if (!active) return;
+  selection = {start: [bounds[0], bounds[1]], end: [bounds[2], bounds[3]]};
+  if (mode !== "sprocket") {
+    mode = "sprocket";
+    drawView();
+  } else drawOverlay();
+  const index = (sprocketReport?.damage || []).findIndex(
+    item => item.bounds[0] === bounds[0] && item.bounds[1] === bounds[1]);
+  message(index >= 0 ? "已在原片上标出第 " + (index + 1) + " 处破口。" : "已在原片上标出破口。");
 }
 
 function fullScan() {
-  return mode === "source" || mode === "clipping";
+  return mode === "source" || mode === "clipping" || mode === "sprocket";
 }
 
 function drawView() {
@@ -199,10 +282,17 @@ function drawHistogram() {
 
 function setMode(next) {
   if (tool) setTool(null);
+  if (next === "sprocket" && !active.settings.sprocket.region) {
+    message("先在完整原片上框一段完整齿孔作参照。", true);
+    return;
+  }
   mode = next;
   drawView();
   if (next === "clipping") message("蓝色表示有通道读到零值，橙红表示有通道达到满量程，紫色表示同点同时存在两类截断。");
   else if (next === "density") message("由当前片基测算的相对密度。显示与下载统一映射 0 至 1.6 密度单位。");
+  else if (next === "sprocket") message(sprocketReport?.ready
+    ? "按整排拟合的孔距和孔形检查这一侧片边，绿色框是参照，红色框是破口。"
+    : "正在检查这一排齿孔…");
   else message();
 }
 
@@ -220,6 +310,7 @@ function setTool(next) {
     const hints = {
       base: "在完整原片上拖框，选一块没有画面的透光片边。",
       crop: "从任意一角拖到对角选出画格。此框记录在完整原片上。",
+      sprocket: "在完整原片上沿一排齿孔拖框，框住几个完整孔和周围片边。",
       retouch: "依次点选一块干净的来源和要修补的目标。",
       probe: "点击完整原片中的位置，读取原始码值和对应的正片像素。"
     };
@@ -253,6 +344,11 @@ function drawOverlay() {
   }
   if (baseRegion) box(baseRegion, "#91d6af", false);
   if (crop) box(crop, "#f9d79d", true);
+  const sprocket = active.settings.sprocket;
+  if (sprocket.region) box(sprocket.region, "#91d6af", false);
+  if (mode === "sprocket" && sprocketReport?.ready) {
+    for (const item of sprocketReport.damage) box(item.bounds, "#ff6b4a", false);
+  }
   if (tool === "retouch" && retouch) {
     marker(retouch.source, "#91d6af", retouch.radius);
     marker(retouch.target, "#f9ba9f", retouch.radius);
@@ -310,6 +406,13 @@ function finishSelection(event) {
   drawOverlay();
   if (tool === "base") saveSettings({base_region: region}, "已从所选的透光片边取样。");
   if (tool === "crop") saveSettings({crop: region}, "已按原片坐标裁切画格。", "positive");
+  if (tool === "sprocket") {
+    if (region[2] - region[0] < 12 || region[3] - region[1] < 12) {
+      message("参照框太小，请框住几个完整孔和周围片边。", true);
+      return;
+    }
+    saveSettings({sprocket: {...active.settings.sprocket, region}}, "已按这段齿孔检查整排。", "sprocket");
+  }
 }
 
 async function updateProbe() {
@@ -344,7 +447,8 @@ async function saveSettings(changes, notice, nextMode) {
     if (nextMode) {
       setTool(null);
       mode = nextMode;
-    } else if (changes.base_region) setTool(null);
+    } else if (changes.base_region !== undefined) setTool(null);
+    else if (changes.sprocket) setTool(null);
     fillProject();
     renderProject();
     message(notice);
@@ -373,6 +477,16 @@ byId("encoding").addEventListener("change", async event => {
 byId("rotate").addEventListener("click", () => saveSettings({turn: (active.settings.turn + 1) % 4}, "已旋转画格。", "positive"));
 byId("mirror").addEventListener("click", () => saveSettings({mirror: !active.settings.mirror}, "已更新镜像设置。", "positive"));
 byId("resetBase").addEventListener("click", () => saveSettings({base_region: null}, "已恢复片边估计。"));
+byId("sampleSprocket").addEventListener("click", () => setTool("sprocket"));
+byId("resetSprocket").addEventListener("click", () => {
+  if (mode === "sprocket") mode = "source";
+  saveSettings({sprocket: {...active.settings.sprocket, region: null}}, "已清除齿孔参照。", "source");
+});
+byId("sprocketSide").addEventListener("change", async event => {
+  await saveSettings({sprocket: {...active.settings.sprocket, side: event.target.value}},
+    "已切换齿孔所在片边。");
+  event.target.value = active.settings.sprocket.side;
+});
 byId("resetTone").addEventListener("click", () => saveSettings({tone: toneDefaults}, "已恢复默认显影。", "positive"));
 byId("resetCrop").addEventListener("click", () => saveSettings({crop: null}, "已使用完整画格。", "positive"));
 byId("resetRetouch").addEventListener("click", () => saveSettings({retouch: null}, "已移除点修补。", "positive"));

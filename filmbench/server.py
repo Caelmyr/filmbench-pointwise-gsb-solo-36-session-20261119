@@ -58,7 +58,11 @@ def register(app, data_dir):
     def demo(key):
         if key not in DEMOS:
             raise Invalid('无法识别所选演示')
-        title, raw, settings = make_demo(key)
+        if key == 'tears':
+            from .demos import tear_scan
+            title, raw, settings = tear_scan()
+        else:
+            title, raw, settings = make_demo(key)
         return jsonify(info(projects.create(title, raw, settings, '合成演示', key + '.png'))), 201
 
     @film.post('/restore')
@@ -92,6 +96,10 @@ def register(app, data_dir):
     @film.get('/projects/<project_id>/metrics')
     def metrics(project_id):
         return jsonify(workbench.metrics(projects.load(project_id)))
+
+    @film.get('/projects/<project_id>/sprocket')
+    def sprocket(project_id):
+        return jsonify(workbench.sprocket_report(projects.load(project_id)))
 
     def location():
         return [request.args.get(axis, type=int) for axis in ('x', 'y')]

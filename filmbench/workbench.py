@@ -8,11 +8,12 @@ from image_lab.validation import Invalid
 from .density import check_region, density_view, develop, relative_density, sample_base
 from .diagnostics import clipping, overlay, rounded, summary
 from .frame import apply_retouch, prepared
+from .perforation import annotate, inspect
 from .scan import compact, decode, display_rgb, png_rgb, tiff_rgb
 from .settings import point
 
 
-VIEWS = ('source', 'reference', 'positive', 'density', 'clipping')
+VIEWS = ('source', 'reference', 'positive', 'density', 'clipping', 'sprocket')
 OUTPUTS = ('positive.png', 'positive.tif', 'density.png')
 
 
@@ -26,6 +27,15 @@ class Workbench:
 
     def check_setting(self, project_id, settings):
         check_region(self.scan(project_id).codes, settings['base_region'])
+        if settings['sprocket']['region'] is not None:
+            self.sprocket(project_id, settings['sprocket'])
+
+    def sprocket(self, project_id, setting):
+        if setting['region'] is None:
+            raise Invalid('请先在原片上框出一段齿孔作为参照')
+        scan = self.scan(project_id)
+        report = inspect(scan.codes, scan.maximum, setting['region'], setting['side'])
+        return report
 
     def develop(self, project):
         settings = project['settings']
@@ -39,12 +49,20 @@ class Workbench:
     def preview(self, project, view):
         settings = project['settings']
         scan = self.scan(project['id'])
-        if view in ('source', 'reference', 'clipping'):
+        sprocket = settings['sprocket']
+        if view in ('source', 'reference', 'clipping', 'sprocket'):
             source = scan.linear(settings['encoding'])
             if view == 'clipping':
                 source = overlay(source, *clipping(scan.codes, scan.maximum))
             elif view == 'reference':
                 source = prepared(source, settings, scan.size)
+            elif view == 'sprocket':
+                if sprocket['region'] is None:
+                    raise Invalid('请先在原片上框出一段齿孔作为参照')
+                marked = annotate(display_rgb(source, 8),
+                                  self.sprocket(project['id'], sprocket),
+                                  sprocket['region'])
+                return png_rgb(compact(marked))
             return png_rgb(display_rgb(compact(source)))
         if view not in VIEWS:
             raise Invalid('无法识别预览模式')
@@ -75,6 +93,16 @@ class Workbench:
         scan, source, base, density, positive = self.develop(project)
         positive = prepared(positive, project['settings'], scan.size)
         return summary(scan, base, source, density, positive)
+
+    def sprocket_report(self, project):
+        setting = project['settings']['sprocket']
+        if setting['region'] is None:
+            return {'ready': False, 'message': '先在完整原片上框一段齿孔作参照。'}
+        report = self.sprocket(project['id'], setting)
+        report['ready'] = True
+        report['message'] = (f"{len(report['damage'])} 处破口"
+                             if report['damage'] else '这一排没有破口')
+        return report
 
     def probe(self, project, coords):
         x, y = point(coords, project['size'], '像素探针')

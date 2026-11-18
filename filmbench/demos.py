@@ -9,6 +9,7 @@ from .settings import initial_settings
 DEMOS = {
     'harbor': {'title': '港湾日落', 'description': '16位线性 RGB · 正常橙色片边和暗部纹理'},
     'market': {'title': '雨夜市集', 'description': '8位 sRGB · 通道截断和一处灰尘'},
+    'tears': {'title': '齿孔破口', 'description': '16位线性 RGB · 上排一个撕开的孔和一处连孔破口'},
 }
 
 WIDTH, HEIGHT = 1024, 638
@@ -140,3 +141,57 @@ def make_demo(key):
         encoding = 'linear'
     settings = initial_settings(encoding, BASE_REGION, CROP)
     return DEMOS[key]['title'], png_rgb(scan), settings
+
+
+def sprocket_strip(width, height, holes, pitch, size, curve, seed):
+    """Drawn row of perforations for the sprocket demo; returned on a 0..255 mask."""
+    mask = np.zeros((height, width), np.float32)
+    rng = np.random.default_rng(seed)
+    hole_width, hole_height = size
+    for index, cx in enumerate(holes):
+        cy = 31 + curve * np.sin((cx / width) * np.pi * 1.7 + .4)
+        left = cx - hole_width / 2
+        top = cy - hole_height / 2
+        mask[max(0, int(top)):int(top + hole_height),
+             max(0, int(left)):int(left + hole_width)] = 1
+        if index == 6:                        # single torn hole
+            mask[max(0, int(top) - 5):int(top + hole_height + 2),
+                 max(0, int(left) - 3):int(left + hole_width + 4)] = 1
+        if index == 9:                         # two holes joined by a torn bridge
+            mask[max(0, int(top)):int(top + hole_height),
+                 int(left):int(cx + pitch * 1.0 + hole_width / 2)] = 1
+    return mask
+
+
+TEAR_WIDTH, TEAR_HEIGHT = 1024, 420
+TEAR_PITCH, TEAR_HOLE, TEAR_CURVE = 47.0, (26, 19), 7.0
+TEAR_HOLES = [-12 + index * TEAR_PITCH for index in range(23)]
+TEAR_CROP = [30, 92, TEAR_WIDTH - 30, TEAR_HEIGHT - 30]
+TEAR_BASE = [96, 12, 210, 52]
+TEAR_REFERENCE = [8, 6, 205, 62]
+
+
+def tear_scan():
+    """16-bit scan whose top sprocket row has one torn hole and one joined opening."""
+    rng = np.random.default_rng(64)
+    base = np.array([.78, .34, .132], dtype=np.float32)
+    trans = np.broadcast_to(base, (TEAR_HEIGHT, TEAR_WIDTH, 3)).copy()
+    x0, y0, x1, y1 = TEAR_CROP
+    scene = harbor(x1 - x0, y1 - y0)
+    density = .04 + 1.21 * srgb_to_linear(scene.astype(np.float32) / 255)
+    density += rng.normal(0, .006, density.shape[:2])[..., None]
+    trans[y0:y1, x0:x1] = base * np.float32(10) ** -density
+    # Clear film where the perforations sit, so the holes read as bright openings.
+    holes = sprocket_strip(TEAR_WIDTH, TEAR_HEIGHT, TEAR_HOLES, TEAR_PITCH,
+                           TEAR_HOLE, TEAR_CURVE, 64)
+    trans[:72] = np.maximum(trans[:72], holes[:72, :, None] * np.float32([.94, .96, .97]))
+    # Edge print on the film base, away from the perforation row.
+    border = Image.fromarray(np.full((TEAR_HEIGHT, TEAR_WIDTH), 255, np.uint8))
+    draw = ImageDraw.Draw(border)
+    draw.text((40, 80), 'FILMBENCH 35mm 01A', font=ImageFont.load_default(), fill=58)
+    draw.text((TEAR_WIDTH - 190, TEAR_HEIGHT - 24), 'SYNTHETIC', font=ImageFont.load_default(), fill=58)
+    trans *= np.asarray(border, dtype=np.float32)[..., None] / 255
+    scan = np.rint(trans * 65535).astype(np.uint16)
+    settings = initial_settings('linear', TEAR_BASE, TEAR_CROP)
+    settings['sprocket'] = {'region': TEAR_REFERENCE, 'side': 'top'}
+    return DEMOS['tears']['title'], png_rgb(scan), settings

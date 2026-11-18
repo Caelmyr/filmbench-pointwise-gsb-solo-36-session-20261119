@@ -36,9 +36,13 @@ class Projects:
     def load(self, project_id):
         target = self.location(project_id) / 'project.json'
         try:
-            return json.loads(target.read_text(encoding='utf-8'))
+            project = json.loads(target.read_text(encoding='utf-8'))
         except FileNotFoundError as error:
             raise NotFound('扫描工程不存在') from error
+        # Projects saved before the sprocket check existed have no sprocket block.
+        settings = project['settings']
+        settings['sprocket'] = {'region': None, 'side': 'auto', **settings.get('sprocket', {})}
+        return project
 
     def list(self):
         return sorted((json.loads(path.read_text(encoding='utf-8'))
