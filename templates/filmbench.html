@@ -82,6 +82,12 @@
     <aside class="inspector panel" aria-label="显影和输出">
       <div id="settings" hidden>
         <section>
+          <h2>灯箱平场</h2>
+          <div id="flatReading" class="reading">未附加空拍</div>
+          <div class="small-buttons"><button id="uploadFlat">上传空拍</button><button id="removeFlat">移除空拍</button></div>
+          <input id="flatFile" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,image/png,image/jpeg,image/tiff" hidden>
+        </section>
+        <section>
           <h2>片基</h2>
           <label class="control">扫描编码<select id="encoding"><option value="srgb">sRGB</option><option value="linear">线性 RGB</option></select></label>
           <div id="baseReading" class="reading">正在读取片基…</div>

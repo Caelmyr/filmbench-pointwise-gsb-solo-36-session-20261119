@@ -79,6 +79,15 @@ def register(app, data_dir):
                                 lambda settings: workbench.check_setting(project_id, settings))
         return jsonify(info(project))
 
+    @film.post('/projects/<project_id>/flat')
+    def attach_flat(project_id):
+        raw, filename = uploaded('flat', MAX_UPLOAD, '空拍')
+        return jsonify(info(workbench.attach_flat(project_id, raw, filename)))
+
+    @film.delete('/projects/<project_id>/flat')
+    def remove_flat(project_id):
+        return jsonify(info(projects.remove_flat(project_id)))
+
     def image(data, kind='image/png', download=None):
         response = send_file(BytesIO(data), mimetype=kind, as_attachment=download is not None,
                              download_name=download)

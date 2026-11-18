@@ -7,6 +7,7 @@ from image_lab.validation import Invalid
 
 from .density import check_region, density_view, develop, relative_density, sample_base
 from .diagnostics import clipping, overlay, rounded, summary
+from .flatfield import build_gain
 from .frame import apply_retouch, prepared
 from .scan import compact, decode, display_rgb, png_rgb, tiff_rgb
 from .settings import point
@@ -24,6 +25,23 @@ class Workbench:
     def scan(self, project_id):
         return decode(self.projects.raw(project_id))
 
+    @lru_cache(maxsize=3)
+    def flat_gain(self, project_id, sha, encoding):
+        flat = decode(self.projects.flat_raw(project_id))
+        return build_gain(flat, self.scan(project_id).size, encoding)
+
+    def flat_for(self, project):
+        meta = project.get('flat')
+        if not meta:
+            return None, None
+        return self.flat_gain(project['id'], meta['sha256'], project['settings']['encoding'])
+
+    def attach_flat(self, project_id, raw, filename):
+        project = self.projects.load(project_id)
+        flat = decode(raw)
+        build_gain(flat, self.scan(project_id).size, project['settings']['encoding'])
+        return self.projects.attach_flat(project_id, raw, filename, flat)
+
     def check_setting(self, project_id, settings):
         check_region(self.scan(project_id).codes, settings['base_region'])
 
@@ -31,6 +49,9 @@ class Workbench:
         settings = project['settings']
         scan = self.scan(project['id'])
         source = scan.linear(settings['encoding'])
+        gain, _ = self.flat_for(project)
+        if gain is not None:
+            source = np.clip(source / gain, 0, 1)
         base = sample_base(source, scan.codes, scan.maximum, settings['base_region'])
         density = relative_density(source, base['transmission'])
         positive = apply_retouch(develop(density, settings['tone']), settings['retouch'])
@@ -74,7 +95,9 @@ class Workbench:
     def metrics(self, project):
         scan, source, base, density, positive = self.develop(project)
         positive = prepared(positive, project['settings'], scan.size)
-        return summary(scan, base, source, density, positive)
+        report = summary(scan, base, source, density, positive)
+        _, report['flat'] = self.flat_for(project)
+        return report
 
     def probe(self, project, coords):
         x, y = point(coords, project['size'], '像素探针')

@@ -113,7 +113,26 @@ function fillProject() {
   byId("resetCrop").disabled = !settings.crop;
   byId("resetRetouch").disabled = !settings.retouch;
   byId("resetBase").disabled = !settings.base_region;
+  byId("removeFlat").disabled = !active.flat;
+  describeFlat();
   for (const link of all("[data-output]")) link.href = route() + "/export/" + link.dataset.output;
+}
+
+function describeFlat() {
+  const reading = byId("flatReading");
+  if (!active.flat) {
+    reading.textContent = "未附加空拍，灯箱照明不均会带入显影。";
+    reading.removeAttribute("title");
+    return;
+  }
+  let text = "已附加 " + active.flat.filename;
+  if (metrics?.flat) {
+    const info = metrics.flat;
+    text += " · 修复 " + info.repaired.toLocaleString() + " 像素 · 增益 "
+      + info.gain_min.toFixed(2) + "–" + info.gain_max.toFixed(2);
+  }
+  reading.textContent = text;
+  reading.title = "空拍按当前扫描编码解释，灰尘与过曝块已就地修复，缓慢照明渐变保留在增益场中";
 }
 
 function renderProject() {
@@ -124,6 +143,7 @@ function renderProject() {
   json(route() + "/metrics").then(report => {
     if (render !== viewVersion) return;
     metrics = report;
+    describeFlat();
     const {base, codes} = report;
     const source = base.mode === "selection" ? "手动取样" : "从片边估计";
     const clipped = base.clipped_fraction > .05 ? " · 选区含截断像素" : "";
@@ -355,6 +375,21 @@ async function saveSettings(changes, notice, nextMode) {
   }
 }
 
+async function saveFlat(action, notice) {
+  if (!active || busy) return;
+  busy = true;
+  try {
+    active = await action();
+    fillProject();
+    renderProject();
+    message(notice);
+  } catch (error) {
+    message(error.message, true);
+  } finally {
+    busy = false;
+  }
+}
+
 function openDemo(key) {
   return loadProject(() => json("/film/demos/" + key, {method: "POST"}), true);
 }
@@ -376,6 +411,19 @@ byId("resetBase").addEventListener("click", () => saveSettings({base_region: nul
 byId("resetTone").addEventListener("click", () => saveSettings({tone: toneDefaults}, "已恢复默认显影。", "positive"));
 byId("resetCrop").addEventListener("click", () => saveSettings({crop: null}, "已使用完整画格。", "positive"));
 byId("resetRetouch").addEventListener("click", () => saveSettings({retouch: null}, "已移除点修补。", "positive"));
+byId("uploadFlat").addEventListener("click", () => byId("flatFile").click());
+byId("flatFile").addEventListener("change", async event => {
+  const input = event.currentTarget;
+  const file = input.files[0];
+  input.value = "";
+  if (!file || !active) return;
+  const form = new FormData();
+  form.append("flat", file);
+  await saveFlat(() => json(route() + "/flat", {method: "POST", body: form}),
+    "已附加空拍，显影前会先校正照明不均。");
+});
+byId("removeFlat").addEventListener("click", () =>
+  saveFlat(() => json(route() + "/flat", {method: "DELETE"}), "已移除空拍，恢复直接显影。"));
 byId("toneForm").addEventListener("submit", event => {
   event.preventDefault();
   const tone = Object.fromEntries(Array.from(new FormData(event.currentTarget), ([key, value]) => [key, Number(value)]));
